@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  DEV
+  MANAGER
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum AssetCriticality {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum FindingStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_SPRINT
+  FIXED
+  CLOSED
+  DUPLICATE
+  NEEDS_REVIEW
+}
+
+enum SprintStatus {
+  ACTIVE
+  UPCOMING
+  COMPLETED
+}
+
+enum Provider {
+  JIRA
+  GITHUB
+  CLICKUP
+  ASANA
+  TRELLO
+  ZOHO
+  GENERIC
+  MANUAL
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(DEV)
+  createdAt DateTime @default(now())
+
+  sprintFindings SprintFinding[]
+  auditLogs      AuditLog[]
+}
+
+model Finding {
+  id                         String           @id @default(cuid())
+  title                      String
+  description                String
+  reproSteps                 String?
+  evidence                   String?
+  severity                   Severity         @default(MEDIUM)
+  assetCriticality           AssetCriticality @default(MEDIUM)
+  riskScore                  Int
+  cvssScore                  Float?
+  affectedComponent          String
+  affectedVersion            String?
+  status                     FindingStatus    @default(OPEN)
+  needsReview                Boolean          @default(false)
+
+  // AI-generated fields
+  suggestedFix               String?
+  aiSuggestedSeverity        Severity?
+  aiSuggestedSeverityReason  String?
+
+  // Duplicate tracking (self-relation)
+  duplicateOfId              String?
+  duplicateOf                Finding?         @relation("Duplicates", fields: [duplicateOfId], references: [id])
+  duplicates                 Finding[]        @relation("Duplicates")
+
+  // Integration source
+  sourceProvider             Provider         @default(MANUAL)
+  sourceId                   String?
+
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
+
+  sprintFindings             SprintFinding[]
+  auditLogs                  AuditLog[]
+
+  @@unique([sourceProvider, sourceId])
+}
+
+model Sprint {
+  id        String       @id @default(cuid())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    SprintStatus @default(UPCOMING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  sprintFindings SprintFinding[]
+}
+
+model SprintFinding {
+  id                  String   @id @default(cuid())
+  sprintId            String
+  findingId           String
+  addedById           String?
+  overrideReason      String?
+  recommendedBySystem Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  sprint  Sprint  @relation(fields: [sprintId], references: [id])
+  finding Finding @relation(fields: [findingId], references: [id])
+  addedBy User?   @relation(fields: [addedById], references: [id])
+
+  @@unique([sprintId, findingId])
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  findingId     String
+  userId        String?
+  action        String
+  previousValue String?
+  newValue      String?
+  createdAt     DateTime @default(now())
+
+  finding Finding @relation(fields: [findingId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+}
+
+model Integration {
+  id            String   @id @default(cuid())
+  provider      Provider
+  webhookSecret String
+  config        Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
